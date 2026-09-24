@@ -1,0 +1,504 @@
+Option Explicit
+
+Private Const CLASS_NAME As String = "frmTeamSelector"
+
+Private blnLoading As Boolean
+Private blnWasCancelled As Boolean
+Private dictSelectedTeams As Object
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Initializes the team selection form with All selected by default.
+'-------------------------------------------------------------------------------
+Private Sub UserForm_Initialize()
+    Const METHOD_NAME As String = "UserForm_Initialize"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    blnWasCancelled = True
+    Set dictSelectedTeams = CreateObject("Scripting.Dictionary")
+    dictSelectedTeams.CompareMode = vbTextCompare
+    chkAll.Value = True
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    vTeams - 1-based 2D array containing Team key and display caption
+' Returns:       ---
+' Description:   Creates checkboxes only for teams with bookable lending fees.
+'-------------------------------------------------------------------------------
+Public Sub LoadTeams(ByVal vTeams As Variant)
+    Const METHOD_NAME As String = "LoadTeams"
+    Dim chkTeam As MSForms.CheckBox
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim lngHeight As Long
+    Dim lngI As Long
+    Dim lngTop As Single
+    Dim strCaption As String
+    Dim strTeam As String
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    blnLoading = True
+
+    For lngI = fraTeams.Controls.Count - 1 To 0 Step -1
+        fraTeams.Controls.Remove fraTeams.Controls(lngI).Name
+    Next lngI
+
+    lngTop = 10
+
+    If IsArray(vTeams) Then
+        For lngI = LBound(vTeams, 1) To UBound(vTeams, 1)
+            strTeam = Trim$(CStr(vTeams(lngI, 1)))
+            strCaption = CStr(vTeams(lngI, 2))
+
+            If Len(strTeam) > 0 And Len(strCaption) > Len(strTeam) + 2 Then
+                If StrComp(Left$(strCaption, Len(strTeam) + 2), _
+                           strTeam & " (", vbTextCompare) = 0 Then
+                    strCaption = strTeam & vbCrLf & _
+                                 Mid$(strCaption, Len(strTeam) + 2)
+                End If
+            End If
+
+            lngHeight = CalculateTeamCheckboxHeight( _
+                strCaption, _
+                CLng(fraTeams.Width - 28))
+
+            Set chkTeam = fraTeams.Controls.Add( _
+                              "Forms.CheckBox.1", _
+                              "chkTeam_" & CStr(lngI), _
+                              True)
+
+            With chkTeam
+                .Caption = strCaption
+                .Tag = strTeam
+                .Left = 10
+                .Top = lngTop
+                .Width = fraTeams.Width - 28
+                .Height = lngHeight
+                .WordWrap = True
+                .ControlTipText = strCaption
+                .Value = False
+                .Enabled = False
+            End With
+
+            lngTop = lngTop + lngHeight + 3
+        Next lngI
+    End If
+
+    fraTeams.ScrollBars = fmScrollBarsVertical
+    fraTeams.KeepScrollBarsVisible = fmScrollBarsVertical
+    fraTeams.ScrollTop = 0
+    fraTeams.ScrollHeight = lngTop + 5
+
+    chkAll.Value = True
+    blnLoading = False
+    ApplyAllMode
+
+ExitPoint:
+    blnLoading = False
+
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    strCaption - checkbox caption to measure
+'                lngControlWidth - available checkbox width in points
+' Returns:       Long - checkbox height sufficient for wrapped caption text
+' Description:   Estimates the wrapped line count so all team funds remain visible.
+'-------------------------------------------------------------------------------
+Private Function CalculateTeamCheckboxHeight( _
+        ByVal strCaption As String, _
+        ByVal lngControlWidth As Long) As Long
+
+    Const METHOD_NAME As String = "CalculateTeamCheckboxHeight"
+    Const APPROX_CHARACTER_WIDTH As Double = 5.2
+    Const HORIZONTAL_PADDING As Long = 28
+    Const LINE_HEIGHT As Long = 15
+    Const MINIMUM_HEIGHT As Long = 18
+    Dim arrLines As Variant
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim lngCharactersPerLine As Long
+    Dim lngEstimatedLines As Long
+    Dim lngI As Long
+    Dim lngSegmentLength As Long
+    Dim lngTextWidth As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    lngTextWidth = lngControlWidth - HORIZONTAL_PADDING
+    If lngTextWidth < 60 Then lngTextWidth = 60
+
+    lngCharactersPerLine = CLng(lngTextWidth / APPROX_CHARACTER_WIDTH)
+    If lngCharactersPerLine < 12 Then lngCharactersPerLine = 12
+
+    arrLines = Split(strCaption, vbCrLf)
+
+    For lngI = LBound(arrLines) To UBound(arrLines)
+        lngSegmentLength = Len(CStr(arrLines(lngI)))
+
+        If lngSegmentLength = 0 Then
+            lngEstimatedLines = lngEstimatedLines + 1
+        Else
+            lngEstimatedLines = lngEstimatedLines + _
+                ((lngSegmentLength + lngCharactersPerLine - 1) \ lngCharactersPerLine)
+        End If
+    Next lngI
+
+    If lngEstimatedLines < 1 Then lngEstimatedLines = 1
+
+    CalculateTeamCheckboxHeight = lngEstimatedLines * LINE_HEIGHT + 6
+
+    If CalculateTeamCheckboxHeight < MINIMUM_HEIGHT Then
+        CalculateTeamCheckboxHeight = MINIMUM_HEIGHT
+    End If
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Function
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError( _
+        CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
+        "captionLength;controlWidth", Len(strCaption), lngControlWidth)
+    GoTo ExitPoint
+End Function
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Applies the All selection mode after the All checkbox changes.
+'-------------------------------------------------------------------------------
+Private Sub chkAll_Click()
+    Const METHOD_NAME As String = "chkAll_Click"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    If Not blnLoading Then ApplyAllMode
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Enables individual team checkboxes only when All is not selected.
+'-------------------------------------------------------------------------------
+Private Sub ApplyAllMode()
+    Const METHOD_NAME As String = "ApplyAllMode"
+    Dim blnAll As Boolean
+    Dim ctl As MSForms.Control
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    blnAll = CBool(chkAll.Value)
+
+    For Each ctl In fraTeams.Controls
+        If TypeName(ctl) = "CheckBox" Then
+            ctl.Enabled = Not blnAll
+            If blnAll Then ctl.Value = False
+        End If
+    Next ctl
+
+ExitPoint:
+    Set ctl = Nothing
+
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Validates and stores the current team selection before hiding the form.
+'-------------------------------------------------------------------------------
+Private Sub cmdOK_Click()
+    Const METHOD_NAME As String = "cmdOK_Click"
+    Dim ctl As MSForms.Control
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim strTeam As String
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    Set dictSelectedTeams = CreateObject("Scripting.Dictionary")
+    dictSelectedTeams.CompareMode = vbTextCompare
+
+    If Not CBool(chkAll.Value) Then
+        For Each ctl In fraTeams.Controls
+            If TypeName(ctl) = "CheckBox" Then
+                If CBool(ctl.Value) Then
+                    strTeam = Trim$(CStr(ctl.Tag))
+                    If Len(strTeam) > 0 Then
+                        If Not dictSelectedTeams.Exists(strTeam) Then
+                            dictSelectedTeams.Add strTeam, True
+                        End If
+                    End If
+                End If
+            End If
+        Next ctl
+    End If
+
+    If CBool(chkAll.Value) Or dictSelectedTeams.Count > 0 Then
+        blnWasCancelled = False
+        Me.Hide
+    Else
+        MsgBox "Select All or at least one team.", _
+               vbExclamation, _
+               "Report Helaba"
+    End If
+
+ExitPoint:
+    Set ctl = Nothing
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Marks the dialog as cancelled and hides it.
+'-------------------------------------------------------------------------------
+Private Sub cmdCancel_Click()
+    Const METHOD_NAME As String = "cmdCancel_Click"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    blnWasCancelled = True
+    Me.Hide
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    Cancel As Integer, CloseMode As Integer
+' Returns:       ---
+' Description:   Converts the form close button into a controlled cancellation.
+'-------------------------------------------------------------------------------
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    Const METHOD_NAME As String = "UserForm_QueryClose"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    If CloseMode = vbFormControlMenu Then
+        Cancel = True
+        blnWasCancelled = True
+        Me.Hide
+    End If
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       Boolean
+' Description:   Returns whether the user cancelled the team selection dialog.
+'-------------------------------------------------------------------------------
+Public Property Get WasCancelled() As Boolean
+    Const METHOD_NAME As String = "WasCancelled"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    WasCancelled = blnWasCancelled
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Property
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Property
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       Boolean
+' Description:   Returns whether All teams are selected.
+'-------------------------------------------------------------------------------
+Public Property Get AllTeamsSelected() As Boolean
+    Const METHOD_NAME As String = "AllTeamsSelected"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    AllTeamsSelected = CBool(chkAll.Value)
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Property
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Property
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       Object - dictionary of selected raw team names
+' Description:   Returns the selected team dictionary used to filter Loader_input.
+'-------------------------------------------------------------------------------
+Public Function GetSelectedTeams() As Object
+    Const METHOD_NAME As String = "GetSelectedTeams"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    If dictSelectedTeams Is Nothing Then
+        Set dictSelectedTeams = CreateObject("Scripting.Dictionary")
+        dictSelectedTeams.CompareMode = vbTextCompare
+    End If
+
+    Set GetSelectedTeams = dictSelectedTeams
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Function
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Function

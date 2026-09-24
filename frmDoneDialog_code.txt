@@ -1,0 +1,658 @@
+Option Explicit
+
+Private Const CLASS_NAME As String = "frmDoneDialog"
+
+Private Const DLG_MARGIN As Long = 16
+Private Const DLG_CONTENT_WIDTH As Long = 520
+Private Const DLG_LABEL_HEIGHT As Long = 18
+Private Const DLG_FIELD_HEIGHT As Long = 26
+Private Const DLG_NOTE_HEIGHT As Long = 34
+Private Const DLG_BUTTON_WIDTH As Long = 150
+Private Const DLG_BUTTON_HEIGHT As Long = 32
+Private Const DLG_GAP As Long = 8
+Private Const DLG_SECTION_GAP As Long = 14
+Private Const DLG_FONT_SIZE As Long = 11
+Private Const DLG_HEADER_FONT_SIZE As Long = 13
+Private Const DLG_CLIPBOARD_CLSID As String = "New:{1C3B4210-F441-11CE-B9EA-00AA006B1A69}"
+Private Const DLG_HTTP_PREFIX As String = "http"
+
+Private WithEvents cmdOpenFolder As MSForms.CommandButton
+Private WithEvents cmdCopyPath As MSForms.CommandButton
+Private WithEvents cmdClose As MSForms.CommandButton
+
+Private lblHeader As MSForms.Label
+Private lblDatCaption As MSForms.Label
+Private lblFolderCaption As MSForms.Label
+Private lblNote As MSForms.Label
+Private txtDat As MSForms.TextBox
+Private txtFolder As MSForms.TextBox
+
+Private mstrDatPath As String
+Private mstrFolder As String
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Builds every dialog control at run time so the designer only has
+'                to contain an empty form.
+'-------------------------------------------------------------------------------
+Private Sub UserForm_Initialize()
+    Const METHOD_NAME As String = "UserForm_Initialize"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    Me.Caption = MSG_TITLE
+
+    Set lblHeader = Me.Controls.Add("Forms.Label.1", "lblHeader", True)
+    Set lblDatCaption = Me.Controls.Add("Forms.Label.1", "lblDatCaption", True)
+    Set txtDat = Me.Controls.Add("Forms.TextBox.1", "txtDat", True)
+    Set lblFolderCaption = Me.Controls.Add("Forms.Label.1", "lblFolderCaption", True)
+    Set txtFolder = Me.Controls.Add("Forms.TextBox.1", "txtFolder", True)
+    Set lblNote = Me.Controls.Add("Forms.Label.1", "lblNote", True)
+    Set cmdOpenFolder = Me.Controls.Add("Forms.CommandButton.1", "cmdOpenFolder", True)
+    Set cmdCopyPath = Me.Controls.Add("Forms.CommandButton.1", "cmdCopyPath", True)
+    Set cmdClose = Me.Controls.Add("Forms.CommandButton.1", "cmdClose", True)
+
+    Call InitializeFieldAppearance(txtDat)
+    Call InitializeFieldAppearance(txtFolder)
+    Call InitializeCaptionAppearance(lblDatCaption)
+    Call InitializeCaptionAppearance(lblFolderCaption)
+    Call InitializeButtonAppearance(cmdOpenFolder, DLG_OPEN_FOLDER_CAPTION)
+    Call InitializeButtonAppearance(cmdCopyPath, DLG_COPY_PATH_CAPTION)
+    Call InitializeButtonAppearance(cmdClose, DLG_CLOSE_CAPTION)
+
+    lblHeader.Caption = MSG_DONE
+    lblHeader.Font.Size = DLG_HEADER_FONT_SIZE
+    lblHeader.Font.Bold = True
+
+    lblDatCaption.Caption = MSG_DONE_DAT
+    lblFolderCaption.Caption = DLG_FOLDER_CAPTION
+
+    lblNote.Font.Size = DLG_FONT_SIZE
+    lblNote.ForeColor = RGB(150, 60, 0)
+
+    cmdClose.Cancel = True
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    txtField - text box that shows one path
+' Returns:       ---
+' Description:   Makes a path field selectable and copyable but not editable.
+'-------------------------------------------------------------------------------
+Private Sub InitializeFieldAppearance(ByVal txtField As MSForms.TextBox)
+    Const METHOD_NAME As String = "InitializeFieldAppearance"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    txtField.MultiLine = False
+    txtField.Locked = True
+    txtField.BackColor = RGB(255, 255, 255)
+    txtField.SpecialEffect = fmSpecialEffectSunken
+    txtField.Font.Size = DLG_FONT_SIZE
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    lblCaption - caption label above a path field
+' Returns:       ---
+' Description:   Applies the shared caption font to one label.
+'-------------------------------------------------------------------------------
+Private Sub InitializeCaptionAppearance(ByVal lblCaption As MSForms.Label)
+    Const METHOD_NAME As String = "InitializeCaptionAppearance"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    lblCaption.Font.Size = DLG_FONT_SIZE
+    lblCaption.Font.Bold = True
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    cmdButton - button to format
+'                strCaption - caption shown on the button
+' Returns:       ---
+' Description:   Applies the shared button font and caption.
+'-------------------------------------------------------------------------------
+Private Sub InitializeButtonAppearance(ByVal cmdButton As MSForms.CommandButton, _
+                                       ByVal strCaption As String)
+    Const METHOD_NAME As String = "InitializeButtonAppearance"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    cmdButton.Caption = strCaption
+    cmdButton.Font.Size = DLG_FONT_SIZE
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError( _
+        CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
+        "strCaption", strCaption)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    strDatPath - full path of the DAT file, empty when not created
+'                strFolder - folder that holds the output files
+'                strNote - optional warning shown below the paths
+' Returns:       ---
+' Description:   Fills the dialog, lays it out and shows it modally. Only the DAT
+'                file name is displayed, while the full path is kept for Explorer.
+'-------------------------------------------------------------------------------
+Public Sub ShowCompletion(ByVal strDatPath As String, _
+                          ByVal strFolder As String, _
+                          ByVal strNote As String)
+    Const METHOD_NAME As String = "ShowCompletion"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    mstrDatPath = strDatPath
+    mstrFolder = strFolder
+
+    txtDat.Text = FileNameFromPath(strDatPath)
+    txtFolder.Text = strFolder
+    lblNote.Caption = strNote
+
+    cmdCopyPath.Caption = DLG_COPY_PATH_CAPTION
+
+    Call LayoutDialog(Len(strDatPath) > 0, Len(strNote) > 0)
+
+    Me.Show vbModal
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError( _
+        CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
+        "strDatPath;strFolder", strDatPath, strFolder)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    strPath - full file path
+' Returns:       String - the file name without its folder
+' Description:   Extracts the file name by cutting at the last path separator.
+'-------------------------------------------------------------------------------
+Private Function FileNameFromPath(ByVal strPath As String) As String
+    Const METHOD_NAME As String = "FileNameFromPath"
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim lngPosition As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    FileNameFromPath = strPath
+    lngPosition = InStrRev(strPath, Application.PathSeparator)
+
+    If lngPosition = 0 Then
+        lngPosition = InStrRev(strPath, "/")
+    End If
+
+    If lngPosition > 0 Then
+        FileNameFromPath = Mid$(strPath, lngPosition + 1)
+    End If
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Function
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError( _
+        CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
+        "strPath", strPath)
+    GoTo ExitPoint
+End Function
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    blnShowDat - True when the DAT row is visible
+'                blnShowNote - True when the warning row is visible
+' Returns:       ---
+' Description:   Positions every control and sizes the form to the visible rows.
+'-------------------------------------------------------------------------------
+Private Sub LayoutDialog(ByVal blnShowDat As Boolean, ByVal blnShowNote As Boolean)
+    Const METHOD_NAME As String = "LayoutDialog"
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim lngButtonTop As Long
+    Dim lngTop As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    lngTop = DLG_MARGIN
+
+    lblHeader.Left = DLG_MARGIN
+    lblHeader.Top = lngTop
+    lblHeader.Width = DLG_CONTENT_WIDTH
+    lblHeader.Height = DLG_LABEL_HEIGHT + 4
+    lngTop = lngTop + lblHeader.Height + DLG_SECTION_GAP
+
+    Call PlaceField(lblDatCaption, txtDat, lngTop, blnShowDat)
+    Call PlaceField(lblFolderCaption, txtFolder, lngTop, True)
+
+    lblNote.Left = DLG_MARGIN
+    lblNote.Top = lngTop
+    lblNote.Width = DLG_CONTENT_WIDTH
+    lblNote.Height = DLG_NOTE_HEIGHT
+    lblNote.Visible = blnShowNote
+
+    If blnShowNote Then
+        lngTop = lngTop + lblNote.Height + DLG_GAP
+    End If
+
+    lngButtonTop = lngTop + DLG_GAP
+
+    cmdOpenFolder.Left = DLG_MARGIN
+    cmdOpenFolder.Top = lngButtonTop
+    cmdOpenFolder.Width = DLG_BUTTON_WIDTH
+    cmdOpenFolder.Height = DLG_BUTTON_HEIGHT
+
+    cmdCopyPath.Left = DLG_MARGIN + DLG_BUTTON_WIDTH + DLG_GAP
+    cmdCopyPath.Top = lngButtonTop
+    cmdCopyPath.Width = DLG_BUTTON_WIDTH
+    cmdCopyPath.Height = DLG_BUTTON_HEIGHT
+
+    cmdClose.Left = DLG_MARGIN + DLG_CONTENT_WIDTH - DLG_BUTTON_WIDTH
+    cmdClose.Top = lngButtonTop
+    cmdClose.Width = DLG_BUTTON_WIDTH
+    cmdClose.Height = DLG_BUTTON_HEIGHT
+
+    Me.Width = DLG_CONTENT_WIDTH + (DLG_MARGIN * 2) + (Me.Width - Me.InsideWidth)
+    Me.Height = lngButtonTop + DLG_BUTTON_HEIGHT + DLG_MARGIN + (Me.Height - Me.InsideHeight)
+    Me.StartUpPosition = 1
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError( _
+        CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
+        "blnShowDat;blnShowNote", blnShowDat, blnShowNote)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    lblCaption - caption label of the row
+'                txtField - path field of the row
+'                lngTop - running vertical position, advanced by this routine
+'                blnVisible - False hides the row and leaves no gap
+' Returns:       ---
+' Description:   Places one caption and path field and moves the layout cursor.
+'-------------------------------------------------------------------------------
+Private Sub PlaceField(ByVal lblCaption As MSForms.Label, _
+                       ByVal txtField As MSForms.TextBox, _
+                       ByRef lngTop As Long, _
+                       ByVal blnVisible As Boolean)
+    Const METHOD_NAME As String = "PlaceField"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    lblCaption.Visible = blnVisible
+    txtField.Visible = blnVisible
+
+    If blnVisible Then
+        lblCaption.Left = DLG_MARGIN
+        lblCaption.Top = lngTop
+        lblCaption.Width = DLG_CONTENT_WIDTH
+        lblCaption.Height = DLG_LABEL_HEIGHT
+        lngTop = lngTop + DLG_LABEL_HEIGHT + 2
+
+        txtField.Left = DLG_MARGIN
+        txtField.Top = lngTop
+        txtField.Width = DLG_CONTENT_WIDTH
+        txtField.Height = DLG_FIELD_HEIGHT
+        lngTop = lngTop + DLG_FIELD_HEIGHT + DLG_SECTION_GAP
+    End If
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError( _
+        CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
+        "blnVisible", blnVisible)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Preselects the folder path so it can be copied straight away.
+'-------------------------------------------------------------------------------
+Private Sub UserForm_Activate()
+    Const METHOD_NAME As String = "UserForm_Activate"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    txtFolder.SetFocus
+    txtFolder.SelStart = 0
+    txtFolder.SelLength = Len(txtFolder.Text)
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    strPath - path to test
+'                blnAsFolder - True to test a folder, False to test a file
+' Returns:       Boolean - True when the local path exists
+' Description:   Confirms a path is a real local or UNC location. Web addresses
+'                are rejected, because Explorer cannot navigate to them and would
+'                silently fall back to the default folder.
+'-------------------------------------------------------------------------------
+Private Function LocalPathExists(ByVal strPath As String, _
+                                 ByVal blnAsFolder As Boolean) As Boolean
+    Const METHOD_NAME As String = "LocalPathExists"
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim objFileSystem As Object
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    If Len(strPath) > 0 Then
+        If StrComp(Left$(strPath, Len(DLG_HTTP_PREFIX)), _
+                   DLG_HTTP_PREFIX, vbTextCompare) <> 0 Then
+
+            Set objFileSystem = CreateObject("Scripting.FileSystemObject")
+
+            If blnAsFolder Then
+                LocalPathExists = objFileSystem.FolderExists(strPath)
+            Else
+                LocalPathExists = objFileSystem.FileExists(strPath)
+            End If
+        End If
+    End If
+
+ExitPoint:
+    Set objFileSystem = Nothing
+
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Function
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError( _
+        CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
+        "strPath;blnAsFolder", strPath, blnAsFolder)
+    GoTo ExitPoint
+End Function
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Opens the output folder in Explorer. The DAT file is selected
+'                only when it really exists locally, so a synchronised path never
+'                sends Explorer to the default folder.
+'-------------------------------------------------------------------------------
+Private Sub cmdOpenFolder_Click()
+    Const METHOD_NAME As String = "cmdOpenFolder_Click"
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim strCommand As String
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    If LocalPathExists(mstrDatPath, False) Then
+        strCommand = "explorer.exe /select,""" & mstrDatPath & """"
+    ElseIf LocalPathExists(mstrFolder, True) Then
+        strCommand = "explorer.exe """ & mstrFolder & """"
+    Else
+        Err.Raise ERR_FOLDER_NOT_FOUND, METHOD_NAME, _
+                  DLG_ERR_FOLDER_MISSING & mstrFolder
+    End If
+
+    VBA.Shell strCommand, vbNormalFocus
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError( _
+        CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
+        "mstrDatPath;mstrFolder", mstrDatPath, mstrFolder)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Copies the output folder path to the Windows clipboard.
+'-------------------------------------------------------------------------------
+Private Sub cmdCopyPath_Click()
+    Const METHOD_NAME As String = "cmdCopyPath_Click"
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim objClipboard As Object
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    Set objClipboard = CreateObject(DLG_CLIPBOARD_CLSID)
+    objClipboard.SetText txtFolder.Text
+    objClipboard.PutInClipboard
+
+    cmdCopyPath.Caption = DLG_COPIED_CAPTION
+
+    txtFolder.SetFocus
+    txtFolder.SelStart = 0
+    txtFolder.SelLength = Len(txtFolder.Text)
+
+ExitPoint:
+    Set objClipboard = Nothing
+
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Hides the dialog and returns control to the caller.
+'-------------------------------------------------------------------------------
+Private Sub cmdClose_Click()
+    Const METHOD_NAME As String = "cmdClose_Click"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    Me.Hide
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    CloseMode - reason reported by the form engine
+'                Cancel - set to True to keep the form loaded
+' Returns:       ---
+' Description:   Turns the window close button into a plain hide.
+'-------------------------------------------------------------------------------
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    Const METHOD_NAME As String = "UserForm_QueryClose"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    If CloseMode = vbFormControlMenu Then
+        Cancel = True
+        Me.Hide
+    End If
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError( _
+        CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
+        "CloseMode", CloseMode)
+    GoTo ExitPoint
+End Sub
