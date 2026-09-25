@@ -432,9 +432,9 @@ End Function
 ' Author:        Pawel Ligezka
 ' Creation date: 2026-09-04
 ' Parameters:    arrReport - final report array containing Fund, Accrual, TBB and Team
-' Returns:       Variant - 1-based 2D array: Team key and display caption
-' Description:   Returns only teams that would generate at least one loader line
-'                and lists each team's bookable funds in the display caption.
+' Returns:       Variant - 1-based 2D array: Team key, caption and fund list
+' Description:   Returns only teams that would generate at least one loader line,
+'                with each team's bookable funds for display and fund filtering.
 '-------------------------------------------------------------------------------
 Public Function BuildBookableTeamOptions(ByVal arrReport As Variant) As Variant
     Const METHOD_NAME As String = "BuildBookableTeamOptions"
@@ -518,7 +518,7 @@ Public Function BuildBookableTeamOptions(ByVal arrReport As Variant) As Variant
             Next lngJ
         Next lngI
 
-        ReDim arrOptions(1 To dictTeams.Count, 1 To 2)
+        ReDim arrOptions(1 To dictTeams.Count, 1 To 3)
 
         For lngI = LBound(arrTeams) To UBound(arrTeams)
             strTeam = CStr(arrTeams(lngI))
@@ -541,6 +541,8 @@ Public Function BuildBookableTeamOptions(ByVal arrReport As Variant) As Variant
 
             arrOptions(lngI - LBound(arrTeams) + 1, 1) = strTeam
             arrOptions(lngI - LBound(arrTeams) + 1, 2) = strCaption
+            arrOptions(lngI - LBound(arrTeams) + 1, 3) = _
+                Replace(strFunds, ", ", "|")
         Next lngI
 
         BuildBookableTeamOptions = arrOptions
@@ -609,6 +611,54 @@ ErrHandler:
     Call ErrorManager.addError( _
         CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
         "strTeam;blnAllTeams", strTeam, blnAllTeams)
+    GoTo ExitPoint
+End Function
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    strFund - fund value from Report_Helaba
+'                blnAllFunds - True to include every available fund
+'                vSelectedFunds - optional dictionary of selected fund numbers
+' Returns:       Boolean - True when the report row belongs in Loader_input
+' Description:   Applies the fund filter chosen in the selection form.
+'-------------------------------------------------------------------------------
+Private Function FundIsIncluded(ByVal strFund As String, _
+                                ByVal blnAllFunds As Boolean, _
+                                Optional ByVal vSelectedFunds As Variant) As Boolean
+    Const METHOD_NAME As String = "FundIsIncluded"
+    Dim dictSelectedFunds As Object
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    If blnAllFunds Then
+        FundIsIncluded = True
+    ElseIf Not IsMissing(vSelectedFunds) Then
+        Set dictSelectedFunds = vSelectedFunds
+
+        If Not dictSelectedFunds Is Nothing Then
+            FundIsIncluded = dictSelectedFunds.Exists(Trim$(strFund))
+        End If
+    End If
+
+ExitPoint:
+    Set dictSelectedFunds = Nothing
+
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Function
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError( _
+        CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
+        "strFund;blnAllFunds", strFund, blnAllFunds)
     GoTo ExitPoint
 End Function
 
@@ -759,16 +809,20 @@ End Function
 '                strYear - booking year (e.g. "2026")
 '                blnAllTeams - True to build the loader for every team
 '                vSelectedTeams - optional dictionary of checked team names
+'                blnAllFunds - True to build the loader for every available fund
+'                vSelectedFunds - optional dictionary of selected fund numbers
 ' Returns:       Variant - header row plus one row per booking line
 ' Description:   Pure transform implementing the booking rules documented in the
-'                constants section, optionally filtered by Team. Accrual, TBB and
-'                Team columns are located by header rather than by position.
+'                constants section, optionally filtered by Team and Fund. Accrual,
+'                TBB and Team columns are located by header rather than by position.
 '-------------------------------------------------------------------------------
 Public Function BuildLoaderRows(ByVal arrReport As Variant, _
                                 ByVal strSuffix As String, _
                                 ByVal strYear As String, _
                                 Optional ByVal blnAllTeams As Boolean = True, _
-                                Optional ByVal vSelectedTeams As Variant) As Variant
+                                Optional ByVal vSelectedTeams As Variant, _
+                                Optional ByVal blnAllFunds As Boolean = True, _
+                                Optional ByVal vSelectedFunds As Variant) As Variant
     Const METHOD_NAME As String = "BuildLoaderRows"
     Dim errDescription As String
     Dim errNumber As Long
@@ -824,9 +878,11 @@ Public Function BuildLoaderRows(ByVal arrReport As Variant, _
             strTeam = vbNullString
         End If
 
+        strFund = Trim$(CStr(arrReport(lngR, REPORT_FUND_COL)))
+
         If TeamIsIncluded(strTeam, blnAllTeams, vSelectedTeams) _
+           And FundIsIncluded(strFund, blnAllFunds, vSelectedFunds) _
            And Not IsBlankValue(arrReport(lngR, lngTbbCol)) Then
-            strFund = Trim$(CStr(arrReport(lngR, REPORT_FUND_COL)))
             strCurrency = Trim$(CStr(arrReport(lngR, REPORT_CURRENCY_COL)))
             dblAccrual = ToDouble(arrReport(lngR, lngAccCol))
             dblTbb = ToDouble(arrReport(lngR, lngTbbCol))
@@ -890,7 +946,8 @@ ErrHandler:
     errDescription = VBA.Err.Description
     Call ErrorManager.addError( _
         CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
-        "strSuffix;strYear;blnAllTeams", strSuffix, strYear, blnAllTeams)
+        "strSuffix;strYear;blnAllTeams;blnAllFunds", _
+        strSuffix, strYear, blnAllTeams, blnAllFunds)
     GoTo ExitPoint
 End Function
 
