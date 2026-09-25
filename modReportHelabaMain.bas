@@ -187,6 +187,7 @@ Public Sub RunReportHelaba()
     Dim arrLoader As Variant
     Dim arrReport As Variant
     Dim blnAccrual As Boolean
+    Dim blnAllFunds As Boolean
     Dim blnAllTeams As Boolean
     Dim blnPreviousEnableEvents As Boolean
     Dim blnPreviousScreenUpdating As Boolean
@@ -194,6 +195,7 @@ Public Sub RunReportHelaba()
     Dim calculationPrevious As Excel.XlCalculation
     Dim dictAcc As Object
     Dim dictFund As Object
+    Dim dictSelectedFunds As Object
     Dim dictSelectedTeams As Object
     Dim dictTeam As Object
     Dim errDescription As String
@@ -316,12 +318,16 @@ Public Sub RunReportHelaba()
     End If
 
     If blnAccrual Then
-        If Not SelectTeamsForLoader(arrFinal, blnAllTeams, dictSelectedTeams) Then
+        If Not SelectTeamsForLoader( _
+                arrFinal, blnAllTeams, dictSelectedTeams, _
+                blnAllFunds, dictSelectedFunds) Then
             Err.Raise ERR_NO_WORK, METHOD_NAME, ERR_TXT_TEAM_CANCELLED
         End If
 
-        arrLoader = BuildLoaderRows(arrFinal, strSuffix, strYear, _
-                                    blnAllTeams, dictSelectedTeams)
+        arrLoader = BuildLoaderRows( _
+            arrFinal, strSuffix, strYear, _
+            blnAllTeams, dictSelectedTeams, _
+            blnAllFunds, dictSelectedFunds)
         If Not IsArray(arrLoader) Then
             Err.Raise ERR_NO_WORK, METHOD_NAME, ERR_TXT_STEP_LOADER
         End If
@@ -694,13 +700,17 @@ End Function
 ' Parameters:    arrReport - final report array containing accrual, TBB and Team
 '                blnAllTeams - output flag; True means no team filtering
 '                dictSelectedTeams - output dictionary of checked teams
+'                blnAllFunds - output flag; True means no fund filtering
+'                dictSelectedFunds - output dictionary of checked funds
 ' Returns:       Boolean - False only when the dialog was cancelled
-' Description:   Shows only teams that have at least one booking line and lists
-'                their bookable funds in the checkbox caption.
+' Description:   Shows teams with bookable lines and allows an optional fund
+'                filter before Loader_input and the DAT file are created.
 '-------------------------------------------------------------------------------
 Private Function SelectTeamsForLoader(ByVal arrReport As Variant, _
                                       ByRef blnAllTeams As Boolean, _
-                                      ByRef dictSelectedTeams As Object) As Boolean
+                                      ByRef dictSelectedTeams As Object, _
+                                      ByRef blnAllFunds As Boolean, _
+                                      ByRef dictSelectedFunds As Object) As Boolean
     Const METHOD_NAME As String = "SelectTeamsForLoader"
     Dim arrTeamOptions As Variant
     Dim errDescription As String
@@ -716,6 +726,8 @@ Private Function SelectTeamsForLoader(ByVal arrReport As Variant, _
     If Not frmTeamSelector.WasCancelled Then
         blnAllTeams = frmTeamSelector.AllTeamsSelected
         Set dictSelectedTeams = frmTeamSelector.GetSelectedTeams()
+        blnAllFunds = frmTeamSelector.AllFundsSelected
+        Set dictSelectedFunds = frmTeamSelector.GetSelectedFunds()
         SelectTeamsForLoader = True
     End If
 
@@ -734,7 +746,7 @@ ErrHandler:
     errDescription = VBA.Err.Description
     Call ErrorManager.addError( _
         CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
-        "blnAllTeams", blnAllTeams)
+        "blnAllTeams;blnAllFunds", blnAllTeams, blnAllFunds)
     GoTo ExitPoint
 End Function
 
