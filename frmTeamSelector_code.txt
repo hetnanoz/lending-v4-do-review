@@ -16,13 +16,14 @@ Private dictTeamFunds As Object
 Private fraFunds As MSForms.Frame
 Private lstFunds As MSForms.ListBox
 Private objAllFundsHandler As clsTeamCheckBoxHandler
+Private objFundListHandler As clsFundListBoxHandler
 
 '-------------------------------------------------------------------------------
 ' Author:        Pawel Ligezka
 ' Creation date: 2026-09-04
 ' Parameters:    ---
 ' Returns:       ---
-' Description:   Initializes the team selection form with All selected by default.
+' Description:   Initializes the team and fund selection form with no items selected.
 '-------------------------------------------------------------------------------
 Private Sub UserForm_Initialize()
     Const METHOD_NAME As String = "UserForm_Initialize"
@@ -42,7 +43,7 @@ Private Sub UserForm_Initialize()
 
     Me.Caption = "Select loader teams and funds"
     Call CreateFundSelector
-    chkAll.Value = True
+    chkAll.Value = False
 
 ExitPoint:
     If errNumber <> 0 Then
@@ -74,6 +75,7 @@ Private Sub UserForm_Terminate()
     If Not DEV_MODE Then On Error GoTo ErrHandler
 
     Set objAllFundsHandler = Nothing
+    Set objFundListHandler = Nothing
     Set colTeamHandlers = Nothing
     Set dictSelectedFunds = Nothing
     Set dictSelectedTeams = Nothing
@@ -192,7 +194,7 @@ Public Sub LoadTeams(ByVal vTeams As Variant)
                 .WordWrap = True
                 .ControlTipText = strCaption
                 .Value = False
-                .Enabled = False
+                .Enabled = True
             End With
 
             Set objHandler = New clsTeamCheckBoxHandler
@@ -210,10 +212,10 @@ Public Sub LoadTeams(ByVal vTeams As Variant)
     fraTeams.ScrollTop = 0
     fraTeams.ScrollHeight = lngTop + 5
 
-    chkAll.Value = True
-    chkAllFunds.Value = True
+    chkAll.Value = False
+    chkAllFunds.Value = False
     blnLoading = False
-    ApplyAllMode
+    Call ApplyAllMode
     Call FundModeChanged
 
 ExitPoint:
@@ -344,7 +346,7 @@ End Sub
 ' Creation date: 2026-09-04
 ' Parameters:    ---
 ' Returns:       ---
-' Description:   Enables individual team checkboxes only when All is not selected.
+' Description:   Selects or clears all individual team checkboxes to mirror All.
 '-------------------------------------------------------------------------------
 Private Sub ApplyAllMode()
     Const METHOD_NAME As String = "ApplyAllMode"
@@ -360,8 +362,8 @@ Private Sub ApplyAllMode()
 
     For Each ctl In fraTeams.Controls
         If TypeName(ctl) = "CheckBox" Then
-            ctl.Enabled = Not blnAll
-            If blnAll Then ctl.Value = False
+            ctl.Enabled = True
+            ctl.Value = blnAll
         End If
     Next ctl
 
@@ -391,7 +393,7 @@ End Sub
 ' Creation date: 2026-09-04
 ' Parameters:    ---
 ' Returns:       ---
-' Description:   Refreshes the visible fund list after an individual team changes.
+' Description:   Synchronizes All and refreshes funds after a team checkbox changes.
 '-------------------------------------------------------------------------------
 Public Sub TeamSelectionChanged()
     Const METHOD_NAME As String = "TeamSelectionChanged"
@@ -400,7 +402,10 @@ Public Sub TeamSelectionChanged()
 
     If Not DEV_MODE Then On Error GoTo ErrHandler
 
-    If Not blnLoading Then Call RefreshFundList
+    If Not blnLoading Then
+        Call SyncAllTeamsCheckBox
+        Call RefreshFundList
+    End If
 
 ExitPoint:
     If errNumber <> 0 Then
@@ -422,20 +427,159 @@ End Sub
 ' Creation date: 2026-09-04
 ' Parameters:    ---
 ' Returns:       ---
-' Description:   Enables individual fund selection only when All funds is cleared.
+' Description:   Synchronizes All with the current individual team selections.
+'-------------------------------------------------------------------------------
+Private Sub SyncAllTeamsCheckBox()
+    Const METHOD_NAME As String = "SyncAllTeamsCheckBox"
+    Dim blnEveryTeamSelected As Boolean
+    Dim ctl As MSForms.Control
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim lngSelectedCount As Long
+    Dim lngTeamCount As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    For Each ctl In fraTeams.Controls
+        If TypeName(ctl) = "CheckBox" Then
+            lngTeamCount = lngTeamCount + 1
+            If CBool(ctl.Value) Then lngSelectedCount = lngSelectedCount + 1
+        End If
+    Next ctl
+
+    blnEveryTeamSelected = _
+        lngTeamCount > 0 And lngSelectedCount = lngTeamCount
+
+    blnLoading = True
+    chkAll.Value = blnEveryTeamSelected
+    blnLoading = False
+
+ExitPoint:
+    blnLoading = False
+    Set ctl = Nothing
+
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Selects or clears all currently visible funds to mirror All funds.
 '-------------------------------------------------------------------------------
 Public Sub FundModeChanged()
     Const METHOD_NAME As String = "FundModeChanged"
+    Dim blnAllFunds As Boolean
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim lngI As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    If Not blnLoading And Not lstFunds Is Nothing Then
+        blnAllFunds = CBool(chkAllFunds.Value)
+        blnLoading = True
+
+        For lngI = 0 To lstFunds.ListCount - 1
+            lstFunds.Selected(lngI) = blnAllFunds
+        Next lngI
+
+        blnLoading = False
+    End If
+
+ExitPoint:
+    blnLoading = False
+
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Synchronizes All funds after an individual fund selection changes.
+'-------------------------------------------------------------------------------
+Public Sub FundSelectionChanged()
+    Const METHOD_NAME As String = "FundSelectionChanged"
     Dim errDescription As String
     Dim errNumber As Long
 
     If Not DEV_MODE Then On Error GoTo ErrHandler
 
-    If Not lstFunds Is Nothing Then
-        lstFunds.Enabled = Not CBool(chkAllFunds.Value)
-    End If
+    If Not blnLoading Then Call SyncAllFundsCheckBox
 
 ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Checks All funds only when every visible fund is selected.
+'-------------------------------------------------------------------------------
+Private Sub SyncAllFundsCheckBox()
+    Const METHOD_NAME As String = "SyncAllFundsCheckBox"
+    Dim blnEveryFundSelected As Boolean
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim lngI As Long
+    Dim lngSelectedCount As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    For lngI = 0 To lstFunds.ListCount - 1
+        If lstFunds.Selected(lngI) Then
+            lngSelectedCount = lngSelectedCount + 1
+        End If
+    Next lngI
+
+    blnEveryFundSelected = _
+        lstFunds.ListCount > 0 And lngSelectedCount = lstFunds.ListCount
+
+    blnLoading = True
+    chkAllFunds.Value = blnEveryFundSelected
+    blnLoading = False
+
+ExitPoint:
+    blnLoading = False
+
     If errNumber <> 0 Then
         Call VBA.Err.Raise( _
             errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
@@ -487,9 +631,9 @@ Private Sub CreateFundSelector()
         .Top = 12
         .Width = fraFunds.Width - 20
         .Height = 18
-        .Value = True
+        .Value = False
         .ControlTipText = _
-            "Keep selected to process every fund shown below."
+            "Select or clear all funds currently shown below."
     End With
 
     Set objAllFundsHandler = New clsTeamCheckBoxHandler
@@ -506,10 +650,13 @@ Private Sub CreateFundSelector()
         .MultiSelect = fmMultiSelectMulti
         .ListStyle = fmListStyleOption
         .IntegralHeight = False
-        .Enabled = False
+        .Enabled = True
         .ControlTipText = _
-            "Clear All funds to select one or more specific funds."
+            "Select one or more funds. Use All funds to toggle the full list."
     End With
+
+    Set objFundListHandler = New clsFundListBoxHandler
+    Call objFundListHandler.Initialize(lstFunds, Me)
 
     sngRequiredWidth = fraFunds.Left + fraFunds.Width + FUND_PANEL_MARGIN
     If Me.Width < sngRequiredWidth Then Me.Width = sngRequiredWidth
@@ -538,12 +685,14 @@ End Sub
 ' Creation date: 2026-09-04
 ' Parameters:    ---
 ' Returns:       ---
-' Description:   Shows the bookable funds for the selected team set, preserving
-'                any still-valid individual fund selections.
+' Description:   Shows funds for the selected teams and preserves valid selections.
+'                If All funds is active, every fund in the refreshed list is selected.
 '-------------------------------------------------------------------------------
 Private Sub RefreshFundList()
     Const METHOD_NAME As String = "RefreshFundList"
     Dim arrFunds As Variant
+    Dim blnAllFunds As Boolean
+    Dim blnPreviousLoading As Boolean
     Dim ctl As MSForms.Control
     Dim dictAvailableFunds As Object
     Dim dictPreviousFunds As Object
@@ -556,7 +705,6 @@ Private Sub RefreshFundList()
     Dim strTeam As String
     Dim strTmp As String
     Dim varFund As Variant
-    Dim varTeam As Variant
 
     If Not DEV_MODE Then On Error GoTo ErrHandler
 
@@ -572,40 +720,28 @@ Private Sub RefreshFundList()
         End If
     Next lngI
 
-    If CBool(chkAll.Value) Then
-        If dictTeamFunds.Count > 0 Then
-            For Each varTeam In dictTeamFunds.Keys
-                Set dictFunds = dictTeamFunds(CStr(varTeam))
+    For Each ctl In fraTeams.Controls
+        If TypeName(ctl) = "CheckBox" Then
+            If CBool(ctl.Value) Then
+                strTeam = Trim$(CStr(ctl.Tag))
 
-                For Each varFund In dictFunds.Keys
-                    strFund = CStr(varFund)
-                    If Not dictAvailableFunds.Exists(strFund) Then
-                        dictAvailableFunds.Add strFund, True
-                    End If
-                Next varFund
-            Next varTeam
-        End If
-    Else
-        For Each ctl In fraTeams.Controls
-            If TypeName(ctl) = "CheckBox" Then
-                If CBool(ctl.Value) Then
-                    strTeam = Trim$(CStr(ctl.Tag))
+                If dictTeamFunds.Exists(strTeam) Then
+                    Set dictFunds = dictTeamFunds(strTeam)
 
-                    If dictTeamFunds.Exists(strTeam) Then
-                        Set dictFunds = dictTeamFunds(strTeam)
-
-                        For Each varFund In dictFunds.Keys
-                            strFund = CStr(varFund)
-                            If Not dictAvailableFunds.Exists(strFund) Then
-                                dictAvailableFunds.Add strFund, True
-                            End If
-                        Next varFund
-                    End If
+                    For Each varFund In dictFunds.Keys
+                        strFund = CStr(varFund)
+                        If Not dictAvailableFunds.Exists(strFund) Then
+                            dictAvailableFunds.Add strFund, True
+                        End If
+                    Next varFund
                 End If
             End If
-        Next ctl
-    End If
+        End If
+    Next ctl
 
+    blnAllFunds = CBool(chkAllFunds.Value)
+    blnPreviousLoading = blnLoading
+    blnLoading = True
     lstFunds.Clear
 
     If dictAvailableFunds.Count > 0 Then
@@ -626,13 +762,17 @@ Private Sub RefreshFundList()
             strFund = CStr(arrFunds(lngI))
             lstFunds.AddItem strFund
 
-            If dictPreviousFunds.Exists(strFund) Then
+            If blnAllFunds Or dictPreviousFunds.Exists(strFund) Then
                 lstFunds.Selected(lstFunds.ListCount - 1) = True
             End If
         Next lngI
     End If
 
+    blnLoading = blnPreviousLoading
+    Call SyncAllFundsCheckBox
+
 ExitPoint:
+    blnLoading = blnPreviousLoading
     Set ctl = Nothing
     Set dictAvailableFunds = Nothing
     Set dictPreviousFunds = Nothing
