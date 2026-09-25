@@ -1,0 +1,81 @@
+Option Explicit
+
+Private Const CLASS_NAME As String = "clsTeamCheckBoxHandler"
+
+Private WithEvents mCheckBox As MSForms.CheckBox
+Private mEventKind As String
+Private mParent As Object
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    chkTarget - dynamically created checkbox
+'                objParent - frmTeamSelector instance that owns the checkbox
+'                strEventKind - TEAM or ALL_FUNDS
+' Returns:       ---
+' Description:   Connects a dynamic checkbox to the correct parent-form event.
+'-------------------------------------------------------------------------------
+Public Sub Initialize(ByVal chkTarget As MSForms.CheckBox, _
+                      ByVal objParent As Object, _
+                      Optional ByVal strEventKind As String = "TEAM")
+    Const METHOD_NAME As String = "Initialize"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    Set mCheckBox = chkTarget
+    Set mParent = objParent
+    mEventKind = UCase$(Trim$(strEventKind))
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Notifies the parent form when a dynamic checkbox is toggled.
+'-------------------------------------------------------------------------------
+Private Sub mCheckBox_Click()
+    Const METHOD_NAME As String = "mCheckBox_Click"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    If Not mParent Is Nothing Then
+        If StrComp(mEventKind, "ALL_FUNDS", vbTextCompare) = 0 Then
+            Call mParent.FundModeChanged
+        Else
+            Call mParent.TeamSelectionChanged
+        End If
+    End If
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
