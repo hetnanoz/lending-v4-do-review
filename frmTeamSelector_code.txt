@@ -2,9 +2,20 @@ Option Explicit
 
 Private Const CLASS_NAME As String = "frmTeamSelector"
 
+Private Const FUND_PANEL_GAP As Single = 12
+Private Const FUND_PANEL_MARGIN As Single = 12
+Private Const FUND_PANEL_WIDTH As Single = 190
+
 Private blnLoading As Boolean
 Private blnWasCancelled As Boolean
+Private chkAllFunds As MSForms.CheckBox
+Private colTeamHandlers As Collection
+Private dictSelectedFunds As Object
 Private dictSelectedTeams As Object
+Private dictTeamFunds As Object
+Private fraFunds As MSForms.Frame
+Private lstFunds As MSForms.ListBox
+Private objAllFundsHandler As clsTeamCheckBoxHandler
 
 '-------------------------------------------------------------------------------
 ' Author:        Pawel Ligezka
@@ -21,9 +32,55 @@ Private Sub UserForm_Initialize()
     If Not DEV_MODE Then On Error GoTo ErrHandler
 
     blnWasCancelled = True
+    Set colTeamHandlers = New Collection
+    Set dictSelectedFunds = CreateObject("Scripting.Dictionary")
+    dictSelectedFunds.CompareMode = vbTextCompare
     Set dictSelectedTeams = CreateObject("Scripting.Dictionary")
     dictSelectedTeams.CompareMode = vbTextCompare
+    Set dictTeamFunds = CreateObject("Scripting.Dictionary")
+    dictTeamFunds.CompareMode = vbTextCompare
+
+    Me.Caption = "Select loader teams and funds"
+    Call CreateFundSelector
     chkAll.Value = True
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Releases dynamic-control event handlers when the form unloads.
+'-------------------------------------------------------------------------------
+Private Sub UserForm_Terminate()
+    Const METHOD_NAME As String = "UserForm_Terminate"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    Set objAllFundsHandler = Nothing
+    Set colTeamHandlers = Nothing
+    Set dictSelectedFunds = Nothing
+    Set dictSelectedTeams = Nothing
+    Set dictTeamFunds = Nothing
+    Set chkAllFunds = Nothing
+    Set lstFunds = Nothing
+    Set fraFunds = Nothing
 
 ExitPoint:
     If errNumber <> 0 Then
@@ -49,18 +106,27 @@ End Sub
 '-------------------------------------------------------------------------------
 Public Sub LoadTeams(ByVal vTeams As Variant)
     Const METHOD_NAME As String = "LoadTeams"
+    Dim arrFundValues As Variant
     Dim chkTeam As MSForms.CheckBox
+    Dim dictFunds As Object
     Dim errDescription As String
     Dim errNumber As Long
     Dim lngHeight As Long
     Dim lngI As Long
+    Dim lngJ As Long
+    Dim lngOptionColumns As Long
     Dim lngTop As Single
+    Dim objHandler As clsTeamCheckBoxHandler
     Dim strCaption As String
+    Dim strFund As String
     Dim strTeam As String
 
     If Not DEV_MODE Then On Error GoTo ErrHandler
 
     blnLoading = True
+    Set colTeamHandlers = New Collection
+    dictTeamFunds.RemoveAll
+    lstFunds.Clear
 
     For lngI = fraTeams.Controls.Count - 1 To 0 Step -1
         fraTeams.Controls.Remove fraTeams.Controls(lngI).Name
@@ -69,9 +135,35 @@ Public Sub LoadTeams(ByVal vTeams As Variant)
     lngTop = 10
 
     If IsArray(vTeams) Then
+        lngOptionColumns = UBound(vTeams, 2)
+
         For lngI = LBound(vTeams, 1) To UBound(vTeams, 1)
             strTeam = Trim$(CStr(vTeams(lngI, 1)))
             strCaption = CStr(vTeams(lngI, 2))
+
+            Set dictFunds = CreateObject("Scripting.Dictionary")
+            dictFunds.CompareMode = vbTextCompare
+
+            If lngOptionColumns >= 3 Then
+                If Len(Trim$(CStr(vTeams(lngI, 3)))) > 0 Then
+                    arrFundValues = Split(CStr(vTeams(lngI, 3)), "|")
+
+                    For lngJ = LBound(arrFundValues) To UBound(arrFundValues)
+                        strFund = Trim$(CStr(arrFundValues(lngJ)))
+                        If Len(strFund) > 0 Then
+                            If Not dictFunds.Exists(strFund) Then
+                                dictFunds.Add strFund, True
+                            End If
+                        End If
+                    Next lngJ
+                End If
+            End If
+
+            If Len(strTeam) > 0 Then
+                If Not dictTeamFunds.Exists(strTeam) Then
+                    dictTeamFunds.Add strTeam, dictFunds
+                End If
+            End If
 
             If Len(strTeam) > 0 And Len(strCaption) > Len(strTeam) + 2 Then
                 If StrComp(Left$(strCaption, Len(strTeam) + 2), _
@@ -103,7 +195,13 @@ Public Sub LoadTeams(ByVal vTeams As Variant)
                 .Enabled = False
             End With
 
+            Set objHandler = New clsTeamCheckBoxHandler
+            Call objHandler.Initialize(chkTeam, Me)
+            colTeamHandlers.Add objHandler
+
             lngTop = lngTop + lngHeight + 3
+            Set dictFunds = Nothing
+            Set objHandler = Nothing
         Next lngI
     End If
 
@@ -113,11 +211,16 @@ Public Sub LoadTeams(ByVal vTeams As Variant)
     fraTeams.ScrollHeight = lngTop + 5
 
     chkAll.Value = True
+    chkAllFunds.Value = True
     blnLoading = False
     ApplyAllMode
+    Call FundModeChanged
 
 ExitPoint:
     blnLoading = False
+    Set chkTeam = Nothing
+    Set dictFunds = Nothing
+    Set objHandler = Nothing
 
     If errNumber <> 0 Then
         Call VBA.Err.Raise( _
@@ -132,7 +235,6 @@ ErrHandler:
     Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
     GoTo ExitPoint
 End Sub
-
 
 '-------------------------------------------------------------------------------
 ' Author:        Pawel Ligezka
@@ -254,6 +356,7 @@ Private Sub ApplyAllMode()
     If Not DEV_MODE Then On Error GoTo ErrHandler
 
     blnAll = CBool(chkAll.Value)
+    blnLoading = True
 
     For Each ctl In fraTeams.Controls
         If TypeName(ctl) = "CheckBox" Then
@@ -262,8 +365,278 @@ Private Sub ApplyAllMode()
         End If
     Next ctl
 
+    blnLoading = False
+    Call RefreshFundList
+
+ExitPoint:
+    blnLoading = False
+    Set ctl = Nothing
+
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Refreshes the visible fund list after an individual team changes.
+'-------------------------------------------------------------------------------
+Public Sub TeamSelectionChanged()
+    Const METHOD_NAME As String = "TeamSelectionChanged"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    If Not blnLoading Then Call RefreshFundList
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Enables individual fund selection only when All funds is cleared.
+'-------------------------------------------------------------------------------
+Public Sub FundModeChanged()
+    Const METHOD_NAME As String = "FundModeChanged"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    If Not lstFunds Is Nothing Then
+        lstFunds.Enabled = Not CBool(chkAllFunds.Value)
+    End If
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Creates the fund selector beside the existing team selector.
+'                The ListBox scrolls vertically automatically when required.
+'-------------------------------------------------------------------------------
+Private Sub CreateFundSelector()
+    Const METHOD_NAME As String = "CreateFundSelector"
+    Const BUTTON_GAP As Single = 12
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim sngButtonsWidth As Single
+    Dim sngRequiredWidth As Single
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    Set fraFunds = Me.Controls.Add("Forms.Frame.1", "fraFundsDynamic", True)
+
+    With fraFunds
+        .Caption = "Funds"
+        .Left = fraTeams.Left + fraTeams.Width + FUND_PANEL_GAP
+        .Top = fraTeams.Top
+        .Width = FUND_PANEL_WIDTH
+        .Height = fraTeams.Height
+    End With
+
+    Set chkAllFunds = fraFunds.Controls.Add( _
+        "Forms.CheckBox.1", "chkAllFundsDynamic", True)
+
+    With chkAllFunds
+        .Caption = "All funds"
+        .Left = 10
+        .Top = 12
+        .Width = fraFunds.Width - 20
+        .Height = 18
+        .Value = True
+        .ControlTipText = _
+            "Keep selected to process every fund shown below."
+    End With
+
+    Set objAllFundsHandler = New clsTeamCheckBoxHandler
+    Call objAllFundsHandler.Initialize(chkAllFunds, Me, "ALL_FUNDS")
+
+    Set lstFunds = fraFunds.Controls.Add( _
+        "Forms.ListBox.1", "lstFundsDynamic", True)
+
+    With lstFunds
+        .Left = 10
+        .Top = 38
+        .Width = fraFunds.Width - 20
+        .Height = fraFunds.Height - 50
+        .MultiSelect = fmMultiSelectMulti
+        .ListStyle = fmListStyleOption
+        .IntegralHeight = False
+        .Enabled = False
+        .ControlTipText = _
+            "Clear All funds to select one or more specific funds."
+    End With
+
+    sngRequiredWidth = fraFunds.Left + fraFunds.Width + FUND_PANEL_MARGIN
+    If Me.Width < sngRequiredWidth Then Me.Width = sngRequiredWidth
+
+    sngButtonsWidth = cmdOK.Width + BUTTON_GAP + cmdCancel.Width
+    cmdOK.Left = (Me.Width - sngButtonsWidth) / 2
+    cmdCancel.Left = cmdOK.Left + cmdOK.Width + BUTTON_GAP
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Shows the bookable funds for the selected team set, preserving
+'                any still-valid individual fund selections.
+'-------------------------------------------------------------------------------
+Private Sub RefreshFundList()
+    Const METHOD_NAME As String = "RefreshFundList"
+    Dim arrFunds As Variant
+    Dim ctl As MSForms.Control
+    Dim dictAvailableFunds As Object
+    Dim dictPreviousFunds As Object
+    Dim dictFunds As Object
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim lngI As Long
+    Dim lngJ As Long
+    Dim strFund As String
+    Dim strTeam As String
+    Dim strTmp As String
+    Dim varFund As Variant
+    Dim varTeam As Variant
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    Set dictAvailableFunds = CreateObject("Scripting.Dictionary")
+    dictAvailableFunds.CompareMode = vbTextCompare
+    Set dictPreviousFunds = CreateObject("Scripting.Dictionary")
+    dictPreviousFunds.CompareMode = vbTextCompare
+
+    For lngI = 0 To lstFunds.ListCount - 1
+        If lstFunds.Selected(lngI) Then
+            strFund = Trim$(CStr(lstFunds.List(lngI)))
+            If Len(strFund) > 0 Then dictPreviousFunds(strFund) = True
+        End If
+    Next lngI
+
+    If CBool(chkAll.Value) Then
+        If dictTeamFunds.Count > 0 Then
+            For Each varTeam In dictTeamFunds.Keys
+                Set dictFunds = dictTeamFunds(CStr(varTeam))
+
+                For Each varFund In dictFunds.Keys
+                    strFund = CStr(varFund)
+                    If Not dictAvailableFunds.Exists(strFund) Then
+                        dictAvailableFunds.Add strFund, True
+                    End If
+                Next varFund
+            Next varTeam
+        End If
+    Else
+        For Each ctl In fraTeams.Controls
+            If TypeName(ctl) = "CheckBox" Then
+                If CBool(ctl.Value) Then
+                    strTeam = Trim$(CStr(ctl.Tag))
+
+                    If dictTeamFunds.Exists(strTeam) Then
+                        Set dictFunds = dictTeamFunds(strTeam)
+
+                        For Each varFund In dictFunds.Keys
+                            strFund = CStr(varFund)
+                            If Not dictAvailableFunds.Exists(strFund) Then
+                                dictAvailableFunds.Add strFund, True
+                            End If
+                        Next varFund
+                    End If
+                End If
+            End If
+        Next ctl
+    End If
+
+    lstFunds.Clear
+
+    If dictAvailableFunds.Count > 0 Then
+        arrFunds = dictAvailableFunds.Keys
+
+        For lngI = LBound(arrFunds) To UBound(arrFunds) - 1
+            For lngJ = lngI + 1 To UBound(arrFunds)
+                If StrComp(CStr(arrFunds(lngI)), CStr(arrFunds(lngJ)), _
+                           vbTextCompare) > 0 Then
+                    strTmp = CStr(arrFunds(lngI))
+                    arrFunds(lngI) = arrFunds(lngJ)
+                    arrFunds(lngJ) = strTmp
+                End If
+            Next lngJ
+        Next lngI
+
+        For lngI = LBound(arrFunds) To UBound(arrFunds)
+            strFund = CStr(arrFunds(lngI))
+            lstFunds.AddItem strFund
+
+            If dictPreviousFunds.Exists(strFund) Then
+                lstFunds.Selected(lstFunds.ListCount - 1) = True
+            End If
+        Next lngI
+    End If
+
 ExitPoint:
     Set ctl = Nothing
+    Set dictAvailableFunds = Nothing
+    Set dictPreviousFunds = Nothing
+    Set dictFunds = Nothing
 
     If errNumber <> 0 Then
         Call VBA.Err.Raise( _
@@ -288,15 +661,21 @@ End Sub
 '-------------------------------------------------------------------------------
 Private Sub cmdOK_Click()
     Const METHOD_NAME As String = "cmdOK_Click"
+    Dim blnFundSelectionValid As Boolean
+    Dim blnTeamSelectionValid As Boolean
     Dim ctl As MSForms.Control
     Dim errDescription As String
     Dim errNumber As Long
+    Dim lngI As Long
+    Dim strFund As String
     Dim strTeam As String
 
     If Not DEV_MODE Then On Error GoTo ErrHandler
 
     Set dictSelectedTeams = CreateObject("Scripting.Dictionary")
     dictSelectedTeams.CompareMode = vbTextCompare
+    Set dictSelectedFunds = CreateObject("Scripting.Dictionary")
+    dictSelectedFunds.CompareMode = vbTextCompare
 
     If Not CBool(chkAll.Value) Then
         For Each ctl In fraTeams.Controls
@@ -313,17 +692,40 @@ Private Sub cmdOK_Click()
         Next ctl
     End If
 
-    If CBool(chkAll.Value) Or dictSelectedTeams.Count > 0 Then
-        blnWasCancelled = False
-        Me.Hide
-    Else
+    If Not CBool(chkAllFunds.Value) Then
+        For lngI = 0 To lstFunds.ListCount - 1
+            If lstFunds.Selected(lngI) Then
+                strFund = Trim$(CStr(lstFunds.List(lngI)))
+                If Len(strFund) > 0 Then
+                    If Not dictSelectedFunds.Exists(strFund) Then
+                        dictSelectedFunds.Add strFund, True
+                    End If
+                End If
+            End If
+        Next lngI
+    End If
+
+    blnTeamSelectionValid = _
+        CBool(chkAll.Value) Or dictSelectedTeams.Count > 0
+    blnFundSelectionValid = _
+        CBool(chkAllFunds.Value) Or dictSelectedFunds.Count > 0
+
+    If Not blnTeamSelectionValid Then
         MsgBox "Select All or at least one team.", _
                vbExclamation, _
                "Report Helaba"
+    ElseIf Not blnFundSelectionValid Then
+        MsgBox "Select All funds or at least one fund.", _
+               vbExclamation, _
+               "Report Helaba"
+    Else
+        blnWasCancelled = False
+        Me.Hide
     End If
 
 ExitPoint:
     Set ctl = Nothing
+
     If errNumber <> 0 Then
         Call VBA.Err.Raise( _
             errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
@@ -466,6 +868,73 @@ ErrHandler:
     Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
     GoTo ExitPoint
 End Property
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       Boolean
+' Description:   Returns whether every available fund should be processed.
+'-------------------------------------------------------------------------------
+Public Property Get AllFundsSelected() As Boolean
+    Const METHOD_NAME As String = "AllFundsSelected"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    AllFundsSelected = CBool(chkAllFunds.Value)
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Property
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Property
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       Object - dictionary of selected fund numbers
+' Description:   Returns the selected fund dictionary used to filter Loader_input.
+'-------------------------------------------------------------------------------
+Public Function GetSelectedFunds() As Object
+    Const METHOD_NAME As String = "GetSelectedFunds"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    If dictSelectedFunds Is Nothing Then
+        Set dictSelectedFunds = CreateObject("Scripting.Dictionary")
+        dictSelectedFunds.CompareMode = vbTextCompare
+    End If
+
+    Set GetSelectedFunds = dictSelectedFunds
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Function
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Function
 
 '-------------------------------------------------------------------------------
 ' Author:        Pawel Ligezka
