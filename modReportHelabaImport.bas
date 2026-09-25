@@ -67,6 +67,83 @@ End Function
 '-------------------------------------------------------------------------------
 ' Author:        Pawel Ligezka
 ' Creation date: 2026-09-04
+' Parameters:    strFolder - folder that holds the Fondsliste file
+'                strFileName - exact base name without extension
+'                strFileType - exact extension, with or without leading dot
+' Returns:       String - full path of the exact configured file
+' Description:   Resolves only the exact configured Fondsliste name. No wildcard,
+'                date suffix or alternative extension is accepted.
+'-------------------------------------------------------------------------------
+Public Function FindExactFondsliste( _
+        ByVal strFolder As String, _
+        ByVal strFileName As String, _
+        ByVal strFileType As String) As String
+    Const METHOD_NAME As String = "FindExactFondsliste"
+    Dim errDescription As String
+    Dim errNumber As Long
+    Dim strExpectedFile As String
+    Dim strExtension As String
+    Dim strFound As String
+    Dim strPath As String
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    strPath = Trim$(strFolder)
+    If Right$(strPath, 1) <> Application.PathSeparator Then
+        strPath = strPath & Application.PathSeparator
+    End If
+
+    strFileName = Trim$(strFileName)
+    strExtension = Trim$(strFileType)
+
+    If Left$(strExtension, 1) <> "." Then
+        strExtension = "." & strExtension
+    End If
+
+    If InStr(strFileName, "*") > 0 Or InStr(strFileName, "?") > 0 _
+       Or InStr(strExtension, "*") > 0 Or InStr(strExtension, "?") > 0 Then
+        Err.Raise ERR_CONFIG_MISSING, METHOD_NAME, _
+                  "Exact Fondsliste file name and extension cannot contain wildcards."
+    End If
+
+    If InStr(strFileName, "\") > 0 Or InStr(strFileName, "/") > 0 Then
+        Err.Raise ERR_CONFIG_MISSING, METHOD_NAME, _
+                  "file_name_Fondsliste must contain only the base file name."
+    End If
+
+    strExpectedFile = strFileName & strExtension
+    strFound = Dir$( _
+        strPath & strExpectedFile, _
+        vbNormal Or vbReadOnly Or vbHidden Or vbSystem Or vbArchive)
+
+    If Len(strFound) = 0 _
+       Or StrComp(strFound, strExpectedFile, vbTextCompare) <> 0 Then
+        Err.Raise ERR_FILE_NOT_FOUND, METHOD_NAME, _
+                  ERR_TXT_NO_EXACT_FONDFILE & strExpectedFile
+    End If
+
+    FindExactFondsliste = strPath & strFound
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Function
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError( _
+        CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
+        "strFolder;strFileName;strFileType", strFolder, strFileName, strFileType)
+    GoTo ExitPoint
+End Function
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
 ' Parameters:    strName - a file name
 ' Returns:       String - the last 8 digit (YYYYMMDD) group in the name, or ""
 ' Description:   Extracts the date stamp from a file name so the newest Fondsliste
@@ -107,13 +184,14 @@ End Function
 '-------------------------------------------------------------------------------
 ' Author:        Pawel Ligezka
 ' Creation date: 2026-09-04
-' Parameters:    strName - workbook file name (no path)
-' Returns:       Boolean - True if a workbook with that name is already open
-' Description:   Lets an already open source workbook be reused instead of
-'                reopened, mirroring the Tradeversand behaviour.
+' Parameters:    strFullPath - full path of the workbook to resolve
+' Returns:       Excel.Workbook - matching open workbook, or Nothing
+' Description:   Reuses only the workbook opened from the exact configured path,
+'                preventing a same-named workbook from another folder from being used.
 '-------------------------------------------------------------------------------
-Private Function IsWorkbookOpen(ByVal strName As String) As Boolean
-    Const METHOD_NAME As String = "IsWorkbookOpen"
+Private Function GetOpenWorkbookByFullPath( _
+        ByVal strFullPath As String) As Excel.Workbook
+    Const METHOD_NAME As String = "GetOpenWorkbookByFullPath"
     Dim errDescription As String
     Dim errNumber As Long
     Dim wkbFound As Excel.Workbook
@@ -121,8 +199,8 @@ Private Function IsWorkbookOpen(ByVal strName As String) As Boolean
     If Not DEV_MODE Then On Error GoTo ErrHandler
 
     For Each wkbFound In Application.Workbooks
-        If StrComp(wkbFound.Name, strName, vbTextCompare) = 0 Then
-            IsWorkbookOpen = True
+        If StrComp(wkbFound.FullName, strFullPath, vbTextCompare) = 0 Then
+            Set GetOpenWorkbookByFullPath = wkbFound
             Exit For
         End If
     Next wkbFound
@@ -142,14 +220,14 @@ ErrHandler:
     errDescription = VBA.Err.Description
     Call ErrorManager.addError( _
         CLASS_NAME, METHOD_NAME, errNumber, errDescription, _
-        "strName", strName)
+        "strFullPath", strFullPath)
     GoTo ExitPoint
 End Function
 
 '-------------------------------------------------------------------------------
 ' Author:        Pawel Ligezka
 ' Creation date: 2026-09-04
-' Parameters:    strFullPath - full path of the newest Fondsliste file
+' Parameters:    strFullPath - full path of the selected Fondsliste file
 ' Returns:       Variant - filtered array (Status, Fund, Name, Account, Team)
 ' Description:   Opens the Fondsliste, reads columns A to O in one block and
 '                returns only Open rows while restoring changed Excel settings.
@@ -167,7 +245,6 @@ Public Function ReadAndFilterFondsliste(ByVal strFullPath As String) As Variant
     Dim lngLastRow As Long
     Dim lngPreviousAutomationSecurity As Long
     Dim strCloseError As String
-    Dim strName As String
     Dim wkbSource As Excel.Workbook
     Dim wksSource As Excel.Worksheet
 
@@ -182,12 +259,10 @@ Public Function ReadAndFilterFondsliste(ByVal strFullPath As String) As Variant
     Application.AskToUpdateLinks = False
     Application.AutomationSecurity = msoAutomationSecurityForceDisable
 
-    strName = Dir$(strFullPath)
-    blnWasOpen = IsWorkbookOpen(strName)
+    Set wkbSource = GetOpenWorkbookByFullPath(strFullPath)
+    blnWasOpen = Not wkbSource Is Nothing
 
-    If blnWasOpen Then
-        Set wkbSource = Application.Workbooks(strName)
-    Else
+    If Not blnWasOpen Then
         Set wkbSource = Application.Workbooks.Open( _
             Filename:=strFullPath, _
             UpdateLinks:=0, _
