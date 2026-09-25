@@ -67,7 +67,9 @@ Public Const FOND_OUT_FUND_COL As Long = 2                 ' Fund in the filtere
 Public Const FOND_OUT_ACCOUNT_COL As Long = 4              ' Account in the filtered array
 Public Const FOND_OUT_TEAM_COL As Long = 5                 ' Team in the filtered array
 Public Const FOND_NAME_CELL As String = "root_Fondsliste"  ' named cell with the FOLDER path
-Public Const FOND_USE_LATEST_CELL As String = "use_latest_Fondsliste"
+Public Const FOND_SELECTION_MODE_CELL As String = "use_latest_Fondsliste"
+Public Const FOND_MODE_DATED As String = "DATED"
+Public Const FOND_MODE_FIXED As String = "FIXED"
 Public Const FOND_EXACT_NAME_CELL As String = "file_name_Fondsliste"
 Public Const FOND_EXACT_TYPE_CELL As String = "file_type_Fondsliste"
 Public Const FOND_FILE_PATTERN As String = "Fondsliste*.xls*"
@@ -151,7 +153,7 @@ Public Const DLG_CLOSE_CAPTION As String = "Close"
 Public Const DLG_ERR_FOLDER_MISSING As String = "The output folder is no longer available: "
 Public Const ERR_TXT_NO_REPORT As String = "No report file selected."
 Public Const ERR_TXT_NO_CONFIG As String = "The named cell 'root_Fondsliste' was not found or is empty. Create it on worksheet Main and enter the Fondsliste folder path."
-Public Const ERR_TXT_NO_FOND_MODE As String = "The named cell 'use_latest_Fondsliste' must contain TRUE or FALSE."
+Public Const ERR_TXT_NO_FOND_MODE As String = "The named cell 'use_latest_Fondsliste' must contain DATED or FIXED."
 Public Const ERR_TXT_NO_FOND_EXACT_NAME As String = "The named cell 'file_name_Fondsliste' is empty. Enter the exact file name without the extension, for example Fondsliste."
 Public Const ERR_TXT_NO_FOND_EXACT_TYPE As String = "The named cell 'file_type_Fondsliste' is empty. Enter the exact extension, for example .xls."
 Public Const ERR_TXT_NO_SAVE_CONFIG As String = "The named cell 'save_path' was not found or is empty. Create it on worksheet Main and enter the output folder path."
@@ -488,13 +490,12 @@ End Function
 ' Creation date: 2026-09-04
 ' Parameters:    strFolder - configured Fondsliste folder
 ' Returns:       String - full path of the Fondsliste file to use
-' Description:   Resolves the Fondsliste selection mode. TRUE keeps the existing
-'                newest-dated-file logic; FALSE requires one exact base name and
-'                extension from the configured named cells.
+' Description:   Resolves the Fondsliste selection mode. DATED uses the newest
+'                date-stamped Fondsliste; FIXED requires the exact configured
+'                base file name and extension.
 '-------------------------------------------------------------------------------
 Private Function ResolveFondslisteFile(ByVal strFolder As String) As String
     Const METHOD_NAME As String = "ResolveFondslisteFile"
-    Dim blnUseLatest As Boolean
     Dim errDescription As String
     Dim errNumber As Long
     Dim strExactName As String
@@ -503,34 +504,32 @@ Private Function ResolveFondslisteFile(ByVal strFolder As String) As String
 
     If Not DEV_MODE Then On Error GoTo ErrHandler
 
-    strMode = UCase$(ResolveNamedCellText(FOND_USE_LATEST_CELL))
+    strMode = UCase$(Trim$(ResolveNamedCellText(FOND_SELECTION_MODE_CELL)))
 
     Select Case strMode
-        Case "TRUE"
-            blnUseLatest = True
-        Case "FALSE"
-            blnUseLatest = False
+        Case FOND_MODE_DATED
+            ResolveFondslisteFile = FindLatestFondsliste(strFolder)
+
+        Case FOND_MODE_FIXED
+            strExactName = ResolveNamedCellText(FOND_EXACT_NAME_CELL)
+            strExactType = ResolveNamedCellText(FOND_EXACT_TYPE_CELL)
+
+            If Len(strExactName) = 0 Then
+                Err.Raise ERR_CONFIG_MISSING, METHOD_NAME, _
+                          ERR_TXT_NO_FOND_EXACT_NAME
+            End If
+
+            If Len(strExactType) = 0 Then
+                Err.Raise ERR_CONFIG_MISSING, METHOD_NAME, _
+                          ERR_TXT_NO_FOND_EXACT_TYPE
+            End If
+
+            ResolveFondslisteFile = FindExactFondsliste( _
+                strFolder, strExactName, strExactType)
+
         Case Else
             Err.Raise ERR_CONFIG_MISSING, METHOD_NAME, ERR_TXT_NO_FOND_MODE
     End Select
-
-    If blnUseLatest Then
-        ResolveFondslisteFile = FindLatestFondsliste(strFolder)
-    Else
-        strExactName = ResolveNamedCellText(FOND_EXACT_NAME_CELL)
-        strExactType = ResolveNamedCellText(FOND_EXACT_TYPE_CELL)
-
-        If Len(strExactName) = 0 Then
-            Err.Raise ERR_CONFIG_MISSING, METHOD_NAME, ERR_TXT_NO_FOND_EXACT_NAME
-        End If
-
-        If Len(strExactType) = 0 Then
-            Err.Raise ERR_CONFIG_MISSING, METHOD_NAME, ERR_TXT_NO_FOND_EXACT_TYPE
-        End If
-
-        ResolveFondslisteFile = FindExactFondsliste( _
-            strFolder, strExactName, strExactType)
-    End If
 
 ExitPoint:
     If errNumber <> 0 Then
