@@ -457,7 +457,6 @@ Public Function ImportExcelReportToArray(ByVal strFullPath As String) As Variant
     Dim lngPreviousAutomationSecurity As Long
     Dim rngUsed As Excel.Range
     Dim strCloseError As String
-    Dim strName As String
     Dim wkbSource As Excel.Workbook
     Dim wksSource As Excel.Worksheet
 
@@ -472,12 +471,10 @@ Public Function ImportExcelReportToArray(ByVal strFullPath As String) As Variant
     Application.AskToUpdateLinks = False
     Application.AutomationSecurity = msoAutomationSecurityForceDisable
 
-    strName = Dir$(strFullPath)
-    blnWasOpen = IsWorkbookOpen(strName)
+    Set wkbSource = GetOpenWorkbookByFullPath(strFullPath)
+    blnWasOpen = Not (wkbSource Is Nothing)
 
-    If blnWasOpen Then
-        Set wkbSource = Application.Workbooks(strName)
-    Else
+    If Not blnWasOpen Then
         Set wkbSource = Application.Workbooks.Open( _
             Filename:=strFullPath, _
             UpdateLinks:=0, _
@@ -789,7 +786,6 @@ Public Function BuildAccrualDict(ByVal strFullPath As String) As Object
     Dim lngR As Long
     Dim strCloseError As String
     Dim strKey As String
-    Dim strName As String
     Dim wkbSource As Excel.Workbook
     Dim wksSource As Excel.Worksheet
 
@@ -806,12 +802,10 @@ Public Function BuildAccrualDict(ByVal strFullPath As String) As Object
 
     Set dictAcc = CreateObject("Scripting.Dictionary")
 
-    strName = Dir$(strFullPath)
-    blnWasOpen = IsWorkbookOpen(strName)
+    Set wkbSource = GetOpenWorkbookByFullPath(strFullPath)
+    blnWasOpen = Not (wkbSource Is Nothing)
 
-    If blnWasOpen Then
-        Set wkbSource = Application.Workbooks(strName)
-    Else
+    If Not blnWasOpen Then
         Set wkbSource = Application.Workbooks.Open( _
             Filename:=strFullPath, _
             UpdateLinks:=0, _
