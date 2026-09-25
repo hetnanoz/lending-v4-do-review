@@ -1,0 +1,73 @@
+Option Explicit
+
+Private Const CLASS_NAME As String = "clsFundListBoxHandler"
+
+Private WithEvents mListBox As MSForms.ListBox
+Private mParent As Object
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    lstTarget - dynamically created fund ListBox
+'                objParent - frmTeamSelector instance that owns the ListBox
+' Returns:       ---
+' Description:   Connects individual fund selection changes to the parent form.
+'-------------------------------------------------------------------------------
+Public Sub Initialize(ByVal lstTarget As MSForms.ListBox, _
+                      ByVal objParent As Object)
+    Const METHOD_NAME As String = "Initialize"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    Set mListBox = lstTarget
+    Set mParent = objParent
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
+
+'-------------------------------------------------------------------------------
+' Author:        Pawel Ligezka
+' Creation date: 2026-09-04
+' Parameters:    ---
+' Returns:       ---
+' Description:   Notifies the parent form after an individual fund is toggled.
+'-------------------------------------------------------------------------------
+Private Sub mListBox_Click()
+    Const METHOD_NAME As String = "mListBox_Click"
+    Dim errDescription As String
+    Dim errNumber As Long
+
+    If Not DEV_MODE Then On Error GoTo ErrHandler
+
+    If Not mParent Is Nothing Then
+        Call mParent.FundSelectionChanged
+    End If
+
+ExitPoint:
+    If errNumber <> 0 Then
+        Call VBA.Err.Raise( _
+            errNumber, CLASS_NAME & "." & METHOD_NAME, errDescription)
+    End If
+
+    Exit Sub
+
+ErrHandler:
+    errNumber = VBA.Err.Number
+    errDescription = VBA.Err.Description
+    Call ErrorManager.addError(CLASS_NAME, METHOD_NAME, errNumber, errDescription)
+    GoTo ExitPoint
+End Sub
